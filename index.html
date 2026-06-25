@@ -215,6 +215,7 @@ const DIAS_REST  = Math.round((FIN-HOY)/86400000);
 const AV_CAL     = Math.round(DIAS_TRANS/DIAS_TOT*100);
 
 const HOJAS = {
+  contrato:'CONTRATO',
   eventos:'AGENDA_EVENTOS', hallazgos:'HALLAZGOS',
   documentos:'DOCUMENTOS',  acciones:'ACCIONES',
   actores:'ACTORES',         componentes:'COMPONENTES',
@@ -253,6 +254,7 @@ const COL_EST_A={'Pendiente':'#888','En proceso':'var(--naranja)','En revisión'
 // ══════════════════════════════════════════════════════════════════════════════
 const SK='seafi2026_v3';
 let DB={
+  contrato:{},
   eventos:[],hallazgos:[],documentos:[],acciones:[],actores:[],
   componentes:COMP_BASE.map(c=>({...c,avance:0,estado:'No iniciado',riesgo:'Bajo',responsable_interno:'',responsable_cliente:'',observaciones:''})),
   entregables:ENT_BASE.map(e=>({...e,estado_elaboracion:'Pendiente',estado_revision:'Pendiente',estado_envio:'Pendiente',estado_validacion:'Pendiente',avance:0,version:'—',responsable:'',observaciones:''}))
@@ -282,15 +284,27 @@ async function leerHoja(nombreHoja) {
     const data = await res.json();
     if(!data.values || data.values.length < 4) return [];
     // Fila 3 (índice 2) = encabezados reales
-    const headers = data.values[2].map(h => (h||'').trim());
+    // Solo tomamos los primeros N encabezados válidos (sin columnas de catálogo auxiliar)
+    const allHeaders = data.values[2].map(h => (h||'').trim());
+    // Detecta columnas de catálogo/auxiliares (encabezado con "CATÁLOGO" o vacío al inicio)
+    let maxCol = allHeaders.length;
+    for(let i = 0; i < allHeaders.length; i++) {
+      if(allHeaders[i].toUpperCase().includes('CATÁLOGO') ||
+         allHeaders[i].toUpperCase().includes('CATALOGO')) {
+        maxCol = i; break;
+      }
+    }
+    const headers = allHeaders.slice(0, maxCol);
     const rows    = data.values.slice(3); // datos desde fila 4
     return rows
       .map(row => Object.fromEntries(headers.map((h,i) => [h, (row[i]||'').trim()])))
       .filter(row => {
         const vals = Object.values(row);
-        // Filtra filas vacías y la fila de ejemplo
+        const firstVal = vals[0] || '';
+        // Filtra: filas vacías, fila de ejemplo, y filas donde el ID está vacío
         return vals.some(v => v !== '') &&
-               !Object.values(row)[0]?.startsWith('↑');
+               !firstVal.startsWith('↑') &&
+               firstVal !== '';
       });
   } catch(e) {
     console.warn('leerHoja error:', e.message);
@@ -325,7 +339,8 @@ async function syncSheet() {
   setSyncStatus('loading');
   toast('Sincronizando con Google Sheets...','');
   try {
-    const [eventos, hallazgos, documentos, acciones, actores, componentes, entregables] = await Promise.all([
+    const [contrato, eventos, hallazgos, documentos, acciones, actores, componentes, entregables] = await Promise.all([
+      leerHoja('CONTRATO'),
       leerHoja(HOJAS.eventos),
       leerHoja(HOJAS.hallazgos),
       leerHoja(HOJAS.documentos),
@@ -349,6 +364,11 @@ async function syncSheet() {
         const vals = Object.values(row);
         return vals.some(v => v !== undefined && v !== null && v !== '');
       });
+    }
+
+    // Sincroniza contrato (primera fila de datos = fila 4 del Sheet)
+    if(contrato && contrato.length > 0) {
+      DB.contrato = contrato[0]; // Solo hay 1 registro de contrato
     }
 
     const evLimpios  = limpiar(eventos);
@@ -486,7 +506,8 @@ async function syncSheet() {
     saveLocal();
     sheetConectado = true;
     setSyncStatus('ok');
-    toast('✅ Sincronizado — '+evLimpios.length+' eventos · '+haLimpios.length+' hallazgos · '+doLimpios.length+' docs','success');
+    const contratoNombre = DB.contrato?.nombre_servicio ? ' · Contrato: ✓' : '';
+    toast('✅ Sincronizado — '+evLimpios.length+' eventos · '+haLimpios.length+' hallazgos · '+doLimpios.length+' docs'+contratoNombre,'success');
     render();
   } catch(e) {
     setSyncStatus('error');
@@ -845,7 +866,23 @@ function modResumen(){
 // MÓDULO: CONTRATO
 // ══════════════════════════════════════════════════════════════════════════════
 function modContrato(){
-  const campos=[['Nombre del servicio','Acompañamiento y Asesoría Estratégica al SEAFI'],['Cliente','SEAFI — Servicio de Administración Fiscal del Estado de Campeche'],['Dependencia vinculada','SAFIN — Secretaría de Administración y Finanzas'],['Administrador del contrato','Pendiente de captura'],['Fecha de inicio','1 de junio de 2026'],['Fecha de término','18 de diciembre de 2026'],['Vigencia',DIAS_TOT+' días · '+AV_CAL+'% consumido'],['Lugar de prestación','Campeche, Campeche'],['Entregables','7'],['Componentes','5'],['Estatus','En ejecución']];
+  // Lee del Sheet si está disponible, si no usa valores por defecto
+  const C = DB.contrato || {};
+  const campos=[
+    ['Nombre del servicio', C.nombre_servicio||'Acompañamiento y Asesoría Estratégica al SEAFI'],
+    ['Cliente', C.cliente||'SEAFI — Servicio de Administración Fiscal del Estado de Campeche'],
+    ['Dependencia vinculada', C.dependencia_vinculada||'SAFIN — Secretaría de Administración y Finanzas'],
+    ['Administrador del contrato', C.administrador_contrato||'Pendiente de captura'],
+    ['Fecha de inicio', C.fecha_inicio||'1 de junio de 2026'],
+    ['Fecha de término', C.fecha_fin||'18 de diciembre de 2026'],
+    ['Vigencia', DIAS_TOT+' días · '+AV_CAL+'% consumido'],
+    ['Lugar de prestación', C.lugar_servicio||'Campeche, Campeche'],
+    ['Estado del contrato', C.estado_contrato||'En ejecución'],
+    ['Forma de validación', C.forma_validacion||'Por validar con SEAFI'],
+    ['Observaciones', C.observaciones||'Sin observaciones'],
+    ['Entregables','7'],
+    ['Componentes','5'],
+  ];
   return`
   <div style="display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap">
     <div style="background:var(--guinda);color:#fff;border-radius:10px;padding:18px 24px;flex:1;min-width:200px">
