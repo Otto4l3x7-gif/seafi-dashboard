@@ -967,4 +967,311 @@ function modHallazgos(){
   </div>
   <div class="card"><table class="tbl tbl-rojo"><thead><tr><th>ID</th><th>Título</th><th>Componente</th><th>Tipo</th><th>Severidad</th><th>Estado</th><th>Detectado</th><th></th></tr></thead><tbody>
     ${filt.length?filt.map((h,i)=>`<tr onclick="hallDetalle=${DB.hallazgos.indexOf(h)};render()" style="cursor:pointer">
-      <td style="font-size:10px;color:#aaa">${h.hallazgo_id||'H-'+(i+1)}<
+      <td style="font-size:10px;color:#aaa">${h.hallazgo_id||'H-'+(i+1)}</td>
+      <td style="font-weight:600;max-width:180px;font-size:11px">${h.titulo}</td>
+      <td style="font-size:11px">${COMP_BASE.find(c=>String(c.id)===String(h.componente_id))?.nombre||'—'}</td>
+      <td style="font-size:11px">${h.tipo||'—'}</td>
+      <td>${badge(h.severidad||'—',COL_SEV[h.severidad]||'#888')}</td>
+      <td>${badge(h.estado||'Abierto',h.estado==='Cerrado'?'#27AE60':'var(--rojo)')}</td>
+      <td style="font-size:10px">${h.fecha_deteccion||''}</td>
+      <td><button class="btn-icon" onclick="event.stopPropagation();eliminarHall(${DB.hallazgos.indexOf(h)})">🗑</button></td>
+    </tr>`).join(''):`<tr><td colspan="8" class="empty">Sin hallazgos registrados.</td></tr>`}
+  </tbody></table></div>${detalleHTML}`;
+}
+function nuevoHall(){
+  openModal('Registrar Hallazgo',`<form id="hall-form">
+    ${fld('Título del hallazgo',inp('titulo'),true)}
+    ${fld('Descripción',textarea('descripcion',undefined,3))}
+    <div class="grid2">
+      ${fld('Componente',`<select name="componente_id"><option value="">—</option>${COMP_BASE.map(c=>`<option value="${c.id}">${c.id} - ${c.nombre}</option>`).join('')}</select>`,true)}
+      ${fld('Tipo',sel('tipo',TIPOS_HALL),true)}
+      ${fld('Severidad',sel('severidad',SEVERIDADES),true)}
+      ${fld('Probabilidad',sel('probabilidad',['Muy Alta','Alta','Media','Baja','Muy Baja']))}
+      ${fld('Impacto',sel('impacto',['Muy Alto','Alto','Medio','Bajo','Muy Bajo']))}
+      ${fld('Entregable',`<select name="entregable_id"><option value="">—</option>${ENT_BASE.map(e=>`<option value="${e.id}">E${e.id}</option>`).join('')}</select>`)}
+      ${fld('Fecha detección',inp('fecha_deteccion',HOY.toISOString().slice(0,10),'date'))}
+      ${fld('Fecha límite',inp('fecha_limite','','date'))}
+      ${fld('Responsable',inp('responsable_atencion'))}
+      ${fld('Estado',sel('estado',ESTADOS_H))}
+    </div>
+    ${fld('Riesgo asociado',textarea('riesgo_asociado',undefined,2))}
+    ${fld('Acción requerida',textarea('accion_requerida',undefined,2))}
+    ${fld('Recomendación',textarea('recomendacion',undefined,2))}
+    ${fld('URL evidencia Drive',inp('url_evidencia','','url','https://drive.google.com/...'))}
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="saveHall()">Guardar Hallazgo</button>
+    </div>
+  </form>`);
+}
+async function saveHall(){
+  const d=formData(document.getElementById('hall-form'));
+  if(!d.titulo||!d.tipo||!d.severidad){toast('Completa título, tipo y severidad','error');return}
+  const h={...d,hallazgo_id:uid('HAL'),estado:d.estado||'Abierto',fecha_registro:HOY.toISOString().slice(0,10)};
+  DB.hallazgos.push(h);
+  await save(HOJAS.hallazgos, h);
+  closeModal();render();toast('Hallazgo registrado'+(CFG.APPS_SCRIPT_URL?' y enviado al Sheet':''),'success');
+}
+function eliminarHall(i){if(!confirm('¿Eliminar?'))return;DB.hallazgos.splice(i,1);hallDetalle=null;saveLocal();render();toast('Eliminado');}
+
+// ══ ACCIONES ══
+function modAcciones(){
+  const venc=DB.acciones.filter(a=>a.fecha_compromiso&&new Date(a.fecha_compromiso)<HOY&&a.estado!=='Concluido');
+  const kanban=ESTADOS_A.map(est=>{
+    const items=DB.acciones.filter(a=>a.estado===est);
+    const colors={'Pendiente':'#888','En proceso':'var(--naranja)','En revisión':'var(--azul)','Bloqueado':'var(--rojo)','Concluido':'#27AE60'};
+    return`<div class="kanban-col"><div class="kanban-title" style="color:${colors[est]}">${est}</div>
+      ${items.length?items.map(a=>`<div class="kanban-item"><b>${a.descripcion?.slice(0,50)||'—'}</b><br><span style="color:#aaa;font-size:10px">${a.responsable||'—'} · ${a.fecha_compromiso||'—'}</span></div>`).join(''):'<div style="font-size:10px;color:#ccc;text-align:center">—</div>'}
+    </div>`;}).join('');
+  const rows=DB.acciones.length?DB.acciones.map((a,i)=>`<tr>
+    <td style="font-size:10px;color:#aaa">${a.accion_id||'A-'+(i+1)}</td>
+    <td style="font-size:11px;max-width:180px;font-weight:600">${a.descripcion?.slice(0,60)||'—'}</td>
+    <td style="font-size:11px">${a.responsable||'—'}</td>
+    <td style="white-space:nowrap;font-size:10px">${a.fecha_compromiso||'—'}</td>
+    <td>${badge(a.estado||'Pendiente',COL_EST_A[a.estado]||'#888')}</td>
+    <td>${badge(a.prioridad||'—','var(--guinda)')}</td>
+    <td><button class="btn-icon" onclick="eliminarAcc(${i})">🗑</button></td>
+  </tr>`).join(''):`<tr><td colspan="7" class="empty">Sin acciones.</td></tr>`;
+  return`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+    <div class="kpi-row" style="margin:0;flex:1">
+      ${kpi('Total',DB.acciones.length,'','var(--cafe)')}
+      ${kpi('Vencidas',venc.length,'','var(--rojo)')}
+      ${kpi('Concluidas',DB.acciones.filter(a=>a.estado==='Concluido').length,'','#27AE60')}
+    </div>
+    <button class="btn btn-primary" onclick="nuevaAcc()">+ Nueva Acción</button>
+  </div>
+  ${venc.length?`<div class="alert alert-danger">⏰ ${venc.length} acción(es) vencida(s)</div>`:''}
+  <div class="card" style="margin-bottom:14px"><div class="card-title">KANBAN</div><div class="kanban">${kanban}</div></div>
+  <div class="card"><table class="tbl tbl-cafe"><thead><tr><th>ID</th><th>Descripción</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th>Prioridad</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function nuevaAcc(){
+  openModal('Nueva Acción',`<form id="acc-form">
+    ${fld('Descripción',textarea('descripcion',undefined,2),true)}
+    <div class="grid2">
+      ${fld('Responsable',inp('responsable'),true)}
+      ${fld('Fecha compromiso',inp('fecha_compromiso','','date'),true)}
+      ${fld('Estado',sel('estado',ESTADOS_A))}
+      ${fld('Prioridad',sel('prioridad',['Alta','Media','Baja']))}
+    </div>
+    ${fld('Decisión requerida',textarea('decision_requerida',undefined,2))}
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="saveAcc()">Guardar</button>
+    </div>
+  </form>`);
+}
+async function saveAcc(){
+  const d=formData(document.getElementById('acc-form'));
+  if(!d.descripcion||!d.responsable){toast('Completa descripción y responsable','error');return}
+  const a={...d,accion_id:uid('ACC'),estado:d.estado||'Pendiente',fecha_registro:HOY.toISOString().slice(0,10)};
+  DB.acciones.push(a);
+  await save(HOJAS.acciones, a);
+  closeModal();render();toast('Acción registrada'+(CFG.APPS_SCRIPT_URL?' y enviada al Sheet':''),'success');
+}
+function eliminarAcc(i){if(!confirm('¿Eliminar?'))return;DB.acciones.splice(i,1);saveLocal();render();}
+
+// ══ CRONOLOGÍA ══
+let evFiltro='';
+function modCronologia(){
+  const evs=DB.eventos.filter(e=>!evFiltro||e.tipo_evento===evFiltro).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
+  return`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;flex-wrap:wrap">
+    <div class="kpi-row" style="margin:0;flex:1">
+      ${kpi('Eventos',DB.eventos.length,'','var(--azul)')}
+      ${kpi('Acuerdos',DB.eventos.filter(e=>e.acuerdo).length,'','var(--verde)')}
+      ${kpi('Pendientes',DB.eventos.filter(e=>e.estado==='Pendiente de seguimiento').length,'','var(--naranja)')}
+    </div>
+    <button class="btn btn-primary" onclick="nuevoEvento()">+ Registrar Evento</button>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px">
+    <select onchange="evFiltro=this.value;render()" style="padding:6px 10px;border-radius:6px;border:1px solid #E0E0E0;font-size:12px"><option value="">Tipo: Todos</option>${selOpts(TIPOS_EVENTO,evFiltro)}</select>
+    ${evFiltro?`<button class="btn btn-secondary btn-sm" onclick="evFiltro='';render()">✕</button>`:''}
+  </div>
+  <div class="card">
+    <div class="card-title">TIMELINE — ${evs.length} evento(s)</div>
+    ${evs.length?`<div class="tl">${evs.map(e=>`
+      <div class="tl-item">
+        <div class="tl-dot"></div>
+        <div class="tl-box">
+          <div class="tl-head"><span class="tl-type">${e.tipo_evento}</span><span class="tl-date">${e.fecha||''} ${e.hora||''}</span></div>
+          <div class="tl-text">${e.resumen||''}</div>
+          ${e.acuerdo?`<div class="tl-acuerdo">✓ ${e.acuerdo}</div>`:''}
+          <div class="tl-tags">
+            ${e.participantes?badge('👥 '+e.participantes.slice(0,30),'#888'):''}
+            ${e.lugar?badge('📍 '+e.lugar,'#888'):''}
+            ${badge(e.estado||'Sin estado',e.estado==='Concluido'?'#27AE60':'var(--naranja)')}
+            ${e.componente_id?badge('C'+e.componente_id,'var(--azul)'):''}
+          </div>
+          ${e.url_evidencia?`<a class="tl-link" href="${e.url_evidencia}" target="_blank">🔗 Ver en Drive</a>`:''}
+          <button class="btn-icon" style="margin-top:6px;font-size:10px" onclick="eliminarEvento(${DB.eventos.indexOf(e)})">🗑 Eliminar</button>
+        </div>
+      </div>`).join('')}</div>`
+    :`<div class="empty">Sin eventos. Usa "+ Registrar Evento".</div>`}
+  </div>`;
+}
+function nuevoEvento(){
+  openModal('Registrar Evento',`<form id="ev-form">
+    <div class="grid2">
+      ${fld('Fecha',inp('fecha',HOY.toISOString().slice(0,10),'date'),true)}
+      ${fld('Hora',inp('hora','','time'))}
+      ${fld('Tipo de evento',sel('tipo_evento',TIPOS_EVENTO),true)}
+      ${fld('Medio',sel('medio',MEDIOS))}
+      ${fld('Lugar',inp('lugar','','text','Ciudad, oficina...'))}
+      ${fld('Institución',inp('institucion','SEAFI'))}
+    </div>
+    ${fld('Participantes',inp('participantes','','text','Nombres separados por coma'))}
+    ${fld('Resumen del evento',textarea('resumen',undefined,3),true)}
+    ${fld('Acuerdo generado',textarea('acuerdo',undefined,2))}
+    <div class="grid2">
+      ${fld('Componente',`<select name="componente_id"><option value="">—</option>${COMP_BASE.map(c=>`<option value="${c.id}">${c.id} - ${c.nombre}</option>`).join('')}</select>`)}
+      ${fld('Entregable',`<select name="entregable_id"><option value="">—</option>${ENT_BASE.map(e=>`<option value="${e.id}">E${e.id}</option>`).join('')}</select>`)}
+      ${fld('Relevancia',sel('relevancia',['Alta','Media','Baja']))}
+      ${fld('Estado',sel('estado',['Pendiente de seguimiento','En seguimiento','Concluido']))}
+    </div>
+    ${fld('URL evidencia Drive',inp('url_evidencia','','url','https://drive.google.com/...'))}
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="saveEvento()">Guardar Evento</button>
+    </div>
+  </form>`);
+}
+async function saveEvento(){
+  const d=formData(document.getElementById('ev-form'));
+  if(!d.fecha||!d.tipo_evento||!d.resumen){toast('Completa fecha, tipo y resumen','error');return}
+  const ev={...d,evento_id:uid('EVT'),fecha_registro:HOY.toISOString().slice(0,10)};
+  DB.eventos.push(ev);
+  await save(HOJAS.eventos, ev);
+  closeModal();render();
+  toast('Evento registrado'+(CFG.APPS_SCRIPT_URL?' y enviado al Sheet ✓':'— sin Sheet configurado'),'success');
+}
+function eliminarEvento(i){if(!confirm('¿Eliminar?'))return;DB.eventos.splice(i,1);saveLocal();render();}
+
+// ══ METODOLOGÍA ══
+function modMetodologia(){
+  return`<div class="card"><div class="card-title">ROADMAP — 14 FASES</div>
+    <div style="display:flex;overflow-x:auto;gap:0;padding-bottom:8px">
+      ${FASES.map((f,i)=>`<div style="min-width:110px;padding:10px;background:${i===0?'var(--guinda)':'#F8F9FA'};border-right:2px solid #fff">
+        <div style="font-size:9px;font-weight:700;color:${i===0?'#fff':'var(--guinda)'}">${i+1}</div>
+        <div style="font-size:10px;color:${i===0?'#fff':'#555'};line-height:1.3;margin-top:3px">${f}</div>
+        <div style="margin-top:7px;font-size:9px;background:${i===0?'#ffffff20':'#E8E8E8'};color:${i===0?'#ffffffCC':'#888'};padding:2px 6px;border-radius:4px;display:inline-block">${i===0?'En proceso':'Pendiente'}</div>
+      </div>`).join('')}
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    ${FASES.map((f,i)=>`<div class="card" style="margin:0;border-left:3px solid ${i===0?'var(--guinda)':'#E0E0E0'};padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div style="font-size:12px;font-weight:600;color:#444"><span style="color:var(--guinda);margin-right:5px">${i+1}.</span>${f}</div>
+        ${badge(i===0?'En proceso':'Pendiente',i===0?'var(--guinda)':'#888')}
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+// ══ KNOWLEDGE GRAPH ══
+function modKnowledge(){
+  const nodos=[{id:'seafi',l:'SEAFI',c:'#7B1D2E',x:250,y:150,r:22},{id:'safin',l:'SAFIN',c:'#1A5276',x:420,y:60,r:16},{id:'c1',l:'Manual',c:'#7B1D2E',x:80,y:80,r:14},{id:'c2',l:'Proced.',c:'#9B4D1F',x:80,y:170,r:14},{id:'c3',l:'Expedient.',c:'#1A5276',x:80,y:260,r:14},{id:'c4',l:'Tributaria',c:'#1D6A4A',x:200,y:310,r:14},{id:'c5',l:'Capacidades',c:'#6C3483',x:360,y:280,r:14},{id:'ents',l:'Entregables',c:'#E67E22',x:430,y:170,r:16},{id:'docs',l:'Documentos',c:'#888',x:140,y:30,r:12},{id:'hall',l:'Hallazgos',c:'#C0392B',x:320,y:50,r:14},{id:'acc',l:'Acciones',c:'#E67E22',x:430,y:330,r:12},{id:'recs',l:'Recomend.',c:'#27AE60',x:300,y:380,r:12}];
+  const links=[['seafi','c1'],['seafi','c2'],['seafi','c3'],['seafi','c4'],['seafi','c5'],['safin','seafi'],['safin','c5'],['c1','ents'],['c2','ents'],['c3','ents'],['c4','ents'],['c5','ents'],['docs','hall'],['hall','acc'],['acc','recs'],['c1','docs'],['c2','docs'],['c3','docs']];
+  return`<div class="card"><div class="card-title">GRAFO DE CONOCIMIENTO</div>
+    <svg id="kg-svg" viewBox="0 0 520 420" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#CCC"/></marker></defs>
+      ${links.map(([a,b])=>{const na=nodos.find(n=>n.id===a),nb=nodos.find(n=>n.id===b);return na&&nb?`<line x1="${na.x}" y1="${na.y}" x2="${nb.x}" y2="${nb.y}" stroke="#E0E0E0" stroke-width="1.5" marker-end="url(#arrow)"/>`:'';}).join('')}
+      ${nodos.map(n=>`<g><circle cx="${n.x}" cy="${n.y}" r="${n.r}" fill="${n.c}20" stroke="${n.c}" stroke-width="2"/><text x="${n.x}" y="${n.y+n.r+11}" text-anchor="middle" font-size="9" font-family="Arial" fill="${n.c}" font-weight="700">${n.l}</text></g>`).join('')}
+    </svg>
+  </div>`;
+}
+
+// ══ BRIEF ══
+let briefTexto='';let briefLoading=false;
+function modBrief(){
+  return`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div><div style="font-size:16px;font-weight:800">Brief Ejecutivo con IA</div><div style="font-size:11px;color:#aaa">Claude · ${HOY.toLocaleDateString('es-MX',{dateStyle:'long'})}</div></div>
+      <button class="btn btn-primary" onclick="generarBrief()" ${briefLoading?'disabled':''}>${briefLoading?'⏳ Generando...':'⚡ Generar Brief'}</button>
+    </div>
+    <div class="brief-box" id="brief-content">${briefTexto||'Haz clic en "Generar Brief" para obtener el resumen ejecutivo basado en los datos reales del dashboard.'}</div>
+  </div>`;
+}
+async function generarBrief(){
+  briefLoading=true;render();
+  const avG=DB.componentes.length?Math.round(DB.componentes.reduce((s,c)=>s+Number(c.avance||0),0)/DB.componentes.length):0;
+  const hCrit=DB.hallazgos.filter(h=>h.severidad==='Crítica'||h.severidad==='Alta');
+  const ctx=`Eres el sistema de inteligencia ejecutiva del Director de Consultoría del proyecto SEAFI Campeche 2026.
+Estado (${HOY.toLocaleDateString('es-MX',{dateStyle:'long'})}): Avance ${avG}% · Tiempo consumido ${AV_CAL}% · Días restantes ${DIAS_REST}
+Hallazgos: ${DB.hallazgos.length} total · ${hCrit.length} críticos · ${DB.hallazgos.filter(h=>h.estado==='Abierto').length} abiertos
+Documentos: ${DB.documentos.length} · Eventos: ${DB.eventos.length} · Acciones: ${DB.acciones.length}
+${hCrit.length?'Críticos: '+hCrit.map(h=>h.titulo+' ('+h.severidad+')').join('; '):'Sin hallazgos críticos.'}
+Genera Brief Ejecutivo: 1)Estado general 2)Avances 3)Riesgos críticos 4)Acciones urgentes 5)Decisiones requeridas 6)Mensaje para SEAFI. Tono ejecutivo. Max 380 palabras.`;
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:ctx}]})});
+    const data=await res.json();
+    briefTexto=data.content?.find(b=>b.type==='text')?.text||'Error.';
+  }catch{briefTexto='Error de conexión.';}
+  briefLoading=false;render();
+}
+
+// ══ ACTORES ══
+function modActores(){
+  const rows=DB.actores.length?DB.actores.map((a,i)=>`<tr><td style="font-weight:600">${a.nombre}</td><td>${a.cargo}</td><td>${badge(a.institucion,'var(--azul)')}</td><td>${a.rol}</td><td>${a.correo?`<a href="mailto:${a.correo}" style="color:var(--azul);font-size:11px">${a.correo}</a>`:''}</td><td>${badge(a.nivel_decision,'var(--morado)')}</td><td><button class="btn-icon" onclick="eliminarActor(${i})">🗑</button></td></tr>`).join(''):`<tr><td colspan="7" class="empty">Sin actores.</td></tr>`;
+  return`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div class="kpi-row" style="margin:0;flex:1">
+      ${kpi('Total',DB.actores.length,'','var(--azul)')}
+      ${kpi('SEAFI',DB.actores.filter(a=>a.institucion==='SEAFI').length,'','var(--guinda)')}
+      ${kpi('SAFIN',DB.actores.filter(a=>a.institucion==='SAFIN').length,'','var(--azul)')}
+    </div>
+    <button class="btn btn-primary" onclick="nuevoActor()">+ Registrar Actor</button>
+  </div>
+  <div class="card"><table class="tbl tbl-azul"><thead><tr><th>Nombre</th><th>Cargo</th><th>Institución</th><th>Rol</th><th>Correo</th><th>Nivel</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function nuevoActor(){
+  openModal('Registrar Actor',`<form id="actor-form">
+    <div class="grid2">
+      ${fld('Nombre completo',inp('nombre'),true)}
+      ${fld('Cargo',inp('cargo'),true)}
+      ${fld('Institución',sel('institucion',['SEAFI','SAFIN','Consultoría','Otro']))}
+      ${fld('Rol',inp('rol'))}
+      ${fld('Correo',inp('correo','','email'))}
+      ${fld('Teléfono',inp('telefono'))}
+      ${fld('Nivel de decisión',sel('nivel_decision',['Estratégico','Directivo','Operativo','Técnico']))}
+    </div>
+    ${fld('Observaciones',textarea('observaciones',undefined,2))}
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="saveActor()">Guardar</button>
+    </div>
+  </form>`);
+}
+async function saveActor(){
+  const d=formData(document.getElementById('actor-form'));
+  if(!d.nombre||!d.cargo){toast('Completa nombre y cargo','error');return}
+  const a={...d,actor_id:uid('ACT'),fecha_registro:HOY.toISOString().slice(0,10)};
+  DB.actores.push(a);
+  await save(HOJAS.actores, a);
+  closeModal();render();toast('Actor registrado'+(CFG.APPS_SCRIPT_URL?' y enviado al Sheet':''),'success');
+}
+function eliminarActor(i){if(!confirm('¿Eliminar?'))return;DB.actores.splice(i,1);saveLocal();render();}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RENDER PRINCIPAL
+// ══════════════════════════════════════════════════════════════════════════════
+function render(){
+  const content=document.getElementById('content');
+  const m={resumen:modResumen,contrato:modContrato,componentes:modComponentes,entregables:modEntregables,documentales:modDocumentales,hallazgos:modHallazgos,acciones:modAcciones,cronologia:modCronologia,metodologia:modMetodologia,knowledge:modKnowledge,brief:modBrief,actores:modActores,config:modConfig}[modActivo];
+  content.innerHTML=m?m():'';
+  content.scrollTop=0;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════════════════════
+loadLocal();
+initNav();
+initHeader();
+render();
+if(CFG.SHEET_ID && CFG.API_KEY){
+  setTimeout(syncSheet, 1500);
+}
+</script>
+</body>
+</html>
