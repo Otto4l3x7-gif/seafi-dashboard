@@ -1300,7 +1300,7 @@ function eliminarActor(i){
 function modConfig(){
   const script=`function doPost(e) {
   const body  = JSON.parse(e.postData.contents);
-  const ss    = SpreadsheetApp.openById("TU_SHEET_ID");
+  const ss    = SpreadsheetApp.openById("1DheSu15MkYdYiC3XMws2gDuWfl6fMJsC6SaMwVXaXqg");
   const hoja  = ss.getSheetByName(body.hoja);
   const datos = body.datos;
   if (hoja.getLastRow() === 0) {
