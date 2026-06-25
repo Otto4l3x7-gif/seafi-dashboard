@@ -292,13 +292,15 @@ async function leerHoja(nombreHoja) {
 async function escribirFila(nombreHoja, datos) {
   if(!CFG.APPS_SCRIPT_URL) return false;
   try {
-    const res = await fetch(CFG.APPS_SCRIPT_URL, {
+    // Usamos no-cors porque Apps Script no puede enviar headers CORS en respuesta a POST
+    // Los datos SÍ llegan al Sheet aunque el navegador no pueda leer la respuesta
+    await fetch(CFG.APPS_SCRIPT_URL, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      mode: 'no-cors',
+      headers: {'Content-Type':'text/plain'},
       body: JSON.stringify({hoja: nombreHoja, datos}),
     });
-    const json = await res.json();
-    return json.ok === true;
+    return true; // Con no-cors siempre asumimos éxito si no hay error de red
   } catch(e) {
     console.warn('escribirFila error:', e.message);
     return false;
@@ -621,14 +623,12 @@ async function probarConexion() {
     res.innerHTML = '✅ Lectura OK ('+datos.length+' filas en AGENDA_EVENTOS)<br>⚠️ Apps Script URL no configurada — la escritura no funcionará hasta que la configures.';
     res.style.color = 'var(--naranja)'; return;
   }
-  const escritura = await escribirFila('_TEST_', {test:'ping', fecha: new Date().toISOString()});
-  if(escritura) {
-    res.innerHTML = '✅ Lectura OK · ✅ Escritura OK<br>La conexión con Google Sheets funciona correctamente. Puedes usar ↻ Sync Sheet.';
-    res.style.color = 'var(--verde)';
-    setSyncStatus('ok');
-  } else {
-    res.innerHTML = '✅ Lectura OK · ❌ Escritura falló<br>Verifica:<br>• Que la Apps Script URL termine en /exec<br>• Que el despliegue tenga acceso "Cualquier usuario"<br>• Que hayas autorizado los permisos al desplegar';
-    res.style.color = 'var(--naranja)';
+  // Con no-cors no podemos leer la respuesta — verificamos escribiendo y revisando el Sheet
+await escribirFila('_TEST_', {test:'ping', fecha: new Date().toISOString()});
+res.innerHTML = '✅ Lectura OK · ✅ Petición de escritura enviada<br>Verifica en tu Google Sheet que apareció una fila en la hoja _TEST_. Si aparece, la escritura funciona correctamente.';
+res.style.color = 'var(--verde)';
+setSyncStatus('ok');
+return;
   }
 }
 
